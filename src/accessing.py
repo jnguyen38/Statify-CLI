@@ -127,29 +127,37 @@ def generate_from_top(sp, top_limit=50, top_range='medium_term'):
 
 def generate_from_playlists(sp):
     user_playlist_info = sp.current_user_playlists()
+    num_playlists = user_playlist_info['total']
     pp = pprint.PrettyPrinter(indent=1, compact=True)
-    total = 0
+    song_total = 1
+    playlist_total = 1
 
     while user_playlist_info:
         for playlist in user_playlist_info['items']:
-            print(f"\n'{playlist['name']}' by {playlist['owner']['display_name']} ({playlist['owner']['id']})")
-            songs = sp.playlist_tracks(playlist['id'])
-            while songs:
-                for count, song in enumerate(songs['items']):
-                    song_name   = song['track']['name']
-                    # song_artist = song['track']['artists'][0]['name']
-                    # song_pop    = song['track']['popularity']
-                    song_uri    = song['track']['uri']
-                    try:
-                        # print(f"{num+offset}: {song_name} by {song_artist}\n\tPopularity: {song_pop}, URI: {song_uri}\n")
-                        total = total + 1
-                        yield {'uri': song_uri, 'name': song_name, 'count': count + total + 1}
-                    except:
-                        pass
-                if songs['next']:
-                    songs = sp.next(songs)
-                else:
-                    songs = None
+            print(f"\n{grey}(Playlist {playlist_total}/{num_playlists}) {default}{green}{playlist['name']}{default} by {playlist['owner']['display_name']} ({playlist['owner']['id']})")
+
+            playlist_total = playlist_total + 1
+            if playlist['owner']['id'] == sp.current_user()['id']:
+                songs = sp.playlist_tracks(playlist['id'])
+                song_total = 1
+                while songs:
+                    for count, song in enumerate(songs['items']):
+                        song_name   = song['track']['name']
+                        # song_artist = song['track']['artists'][0]['name']
+                        # song_pop    = song['track']['popularity']
+                        song_uri    = song['track']['uri']
+                        try:
+                            # print(f"{num+offset}: {song_name} by {song_artist}\n\tPopularity: {song_pop}, URI: {song_uri}\n")
+                            yield {'uri': song_uri, 'name': song_name, 'count': count + song_total}
+                        except:
+                            pass
+                    if songs['next']:
+                        song_total = song_total + 100
+                        songs = sp.next(songs)
+                    else:
+                        songs = None
+            else:
+                print("Playlist Skipped")
         if user_playlist_info['next']:
             user_playlist_info = sp.next(user_playlist_info)
         else:
@@ -227,8 +235,8 @@ def get_playlist_songs_dict(sp, playlist_id: str) -> dict:
 
 
 def handle_song_generator(sp, info: dict, attr: str, threshhold, playlist_id: str, playlist_dict: dict, count, added):
-    attr_dict = {'acousticness': 'acoustic', 'danceability': 'dancy'}
-    if info['count']:
+    attr_dict = {'acousticness': 'acoustic', 'danceability': 'dancy', 'energy': 'energetic', 'loudness': 'loud'}
+    if 'count' in info:
         count = info['count']
     for feature in get_features(sp, info['uri']):
         if feature:
@@ -261,7 +269,9 @@ def handle_song_generator(sp, info: dict, attr: str, threshhold, playlist_id: st
 def create_playlist(sp, playlist_type: str, op: str, username: str, threshhold):
     # Initialize type_dict
     type_dict = {'acousticness': {'title': "Acoustic - Auto-Generated", 'desc': "Auto-generated acoustic playlist"},
-        'danceability': {'title': "Dance - Auto-Generated", 'desc': "Auto-generated danceable playlist"}}
+        'danceability': {'title': "Dance - Auto-Generated", 'desc': "Auto-generated danceable playlist"},
+        'energy' : {'title': 'Energy - Auto-Generated', 'desc': 'Auto-generated energetic playlist'},
+        'loudness' : {'title': 'LOUD - Auto-Generated', 'desc': 'Auto-generated loud music playlist'}}
 
     # Get playlist id (Create or find the id)
     print("Searching Playlists...")
@@ -281,13 +291,14 @@ def create_playlist(sp, playlist_type: str, op: str, username: str, threshhold):
     count = 1
 
     # Search through liked songs
-    if op =='liked':
-        print("Generating Liked Songs...")
+    if op =='liked' or op == 'all':
+        print("\nGenerating Liked Songs...")
         for info in generate_from_library(sp=sp):
             count, added = handle_song_generator(sp, info, playlist_type, threshhold, playlist_id, playlist_dict, count, added)
 
-    elif op == 'top':
-        print("Generating Top Songs...")
+    count = 1
+    if op == 'top' or op == 'all':
+        print("\nGenerating Top Songs...")
         print("\nYour top songs of the past month")
         for info in generate_from_top(sp, top_range='short_term'):
             count, added = handle_song_generator(sp, info, playlist_type, threshhold, playlist_id, playlist_dict, count, added)
@@ -302,8 +313,9 @@ def create_playlist(sp, playlist_type: str, op: str, username: str, threshhold):
         for info in generate_from_top(sp, top_range='long_term'):
             count, added = handle_song_generator(sp, info, playlist_type, threshhold, playlist_id, playlist_dict, count, added)
 
-    elif op == 'playlists':
-        print("Generating Playlist Songs...")
+    count = 1
+    if op == 'playlists' or op == 'all':
+        print("\nGenerating Playlist Songs...")
         for info in generate_from_playlists(sp=sp):
             count, added = handle_song_generator(sp, info, playlist_type, threshhold, playlist_id, playlist_dict, count, added)
 
@@ -343,11 +355,17 @@ def main():
     curr_user = curr_user_info['display_name']
     print(f"User: {blue}{user}{default}, User_ID: {blue}{username}{default}, Logged In As: {blue}{curr_user}{default}")
 
-    # playlist_type = input("Input playlist type ('acousticness', 'danceability')\n> ")
-    # op = input("Input song source(s) ('top', 'liked', 'playlists', 'artists')\n> ")
-    # threshhold = input("Input song threshold\n> ")
+    playlist_type_list = ['acousticness', 'danceability', 'energy', 'loudness']
+    playlist_type = int(input("Pick a playlist type (Choose a number):\n\t1. Acoustic Music\n\t2. Danceable Music\n\
+        3. Energetic Music\n\t4. Loud Music\n> ")) - 1
 
-    create_playlist(sp=sp, playlist_type='acousticness', op='playlists', username=username, threshhold=.8)
+    op_list = ['top', 'liked', 'playlists', 'artist', 'all']
+    op = int(input("Pick a song source (Choose a number):\n\t1. From my most listened to songs\n\
+        2. From my liked songs library\n\t3. From my playlists\n\t4. From my artists\n\t5. All available sources\n> ")) - 1
+
+    threshhold = float(input("Input song threshold (0.00 - 1.00)\n> "))
+
+    create_playlist(sp=sp, playlist_type=playlist_type_list[playlist_type], op=op_list[op], username=username, threshhold=threshhold)
 
     # # id = get_id('Memories (feat. Kid Cudi) - 2021 Remix', token, 'David Guetta')
     # id = get_id('This is the end', token, 'The Ghost of Paul Revere')
